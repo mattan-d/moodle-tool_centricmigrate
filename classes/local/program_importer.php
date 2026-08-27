@@ -450,6 +450,7 @@ class program_importer {
             return;
         }
 
+        $status = xml::int($data['status'] ?? 1, 1) ? 1 : 0;
         if (assignment::get_record([
             'programid' => $programid,
             'userid' => $userid,
@@ -463,7 +464,6 @@ class program_importer {
         }
 
         $now = time();
-        $status = xml::int($data['status'] ?? 1, 1) ? 1 : 0;
         $assignment = new assignment(0, (object)[
             'programid' => $programid,
             'userid' => $userid,

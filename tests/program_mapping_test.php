@@ -59,6 +59,8 @@ final class program_mapping_test extends \advanced_testcase {
         $this->assertSame('wp-39', program_importer::canonical_shortname('', 39));
         $this->assertSame('wp-39', program_importer::canonical_shortname('  ', 39));
     }
+
+    public function test_map_completion(): void {
         if (!program_importer::is_available()) {
             $this->markTestSkipped('local_program is not installed');
         }

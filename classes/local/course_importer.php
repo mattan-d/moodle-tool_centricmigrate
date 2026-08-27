@@ -198,12 +198,7 @@ class course_importer {
             }
 
             $plan = $rc->get_plan();
-            if ($plan->setting_exists('users')) {
-                $usersetting = $plan->get_setting('users');
-                if ($usersetting->get_status() == \base_setting::NOT_LOCKED) {
-                    $usersetting->set_value(false);
-                }
-            }
+            $this->disable_restore_users($plan);
 
             $precheck = $rc->execute_precheck();
             if ($precheck === false) {
@@ -232,6 +227,24 @@ class course_importer {
         rebuild_course_cache($courseid, true);
 
         return $courseid;
+    }
+
+    /**
+     * Skip restoring enrolled users from the course backup when the setting allows it.
+     *
+     * Restore setting objects do not implement is_locked(); never call that method.
+     *
+     * @param \restore_plan $plan
+     */
+    protected function disable_restore_users(\restore_plan $plan): void {
+        if (!$plan->setting_exists('users')) {
+            return;
+        }
+        try {
+            $plan->get_setting('users')->set_value(false);
+        } catch (\Throwable $e) {
+            // Locked or unsupported; continue restore with the default value.
+        }
     }
 
     /**

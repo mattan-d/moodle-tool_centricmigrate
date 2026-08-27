@@ -52,7 +52,7 @@ class course_importer {
      * @return bool
      */
     public function import_course(int $oldid, array $data): bool {
-        $existing = $this->find_existing($data);
+        $existing = $this->find_existing($oldid, $data);
         if ($existing) {
             $this->mapping->set('course', $oldid, (int)$existing->id);
             $this->job->bump_count('course', 'mapped');
@@ -79,7 +79,7 @@ class course_importer {
         }
 
         try {
-            $newid = $this->restore_from_hash($hash, $data);
+            $newid = $this->restore_from_hash($hash, $data, $oldid);
         } catch (\Throwable $e) {
             $this->job->bump_count('course', 'failed');
             $this->job->log('error', get_string('error:restorefailed', 'tool_centricmigrate', $e->getMessage()),
@@ -97,11 +97,20 @@ class course_importer {
     }
 
     /**
+     * @param int $oldid
      * @param array $data
      * @return \stdClass|null
      */
-    protected function find_existing(array $data): ?\stdClass {
+    protected function find_existing(int $oldid, array $data): ?\stdClass {
         global $DB;
+
+        $mapped = $this->mapping->get_existing('course', $oldid, 'course');
+        if ($mapped && $mapped > 1) {
+            $course = $DB->get_record('course', ['id' => $mapped]);
+            if ($course) {
+                return $course;
+            }
+        }
 
         $idnumber = trim((string)xml::value($data['idnumber'] ?? ''));
         if ($idnumber !== '') {
@@ -117,6 +126,12 @@ class course_importer {
             if ($course) {
                 return $course;
             }
+        }
+
+        $stable = 'wp-c-' . $oldid;
+        $course = $DB->get_record('course', ['shortname' => $stable]);
+        if ($course) {
+            return $course;
         }
 
         return null;
@@ -143,9 +158,10 @@ class course_importer {
     /**
      * @param string $hash
      * @param array $data
+     * @param int $oldid
      * @return int
      */
-    protected function restore_from_hash(string $hash, array $data): int {
+    protected function restore_from_hash(string $hash, array $data, int $oldid): int {
         global $USER, $DB;
 
         $mbz = $this->package->extract_content($hash);
@@ -158,7 +174,7 @@ class course_importer {
         }
 
         $fullname = (string)xml::value($data['fullname'] ?? 'Imported course');
-        $shortname = $this->unique_shortname((string)xml::value($data['shortname'] ?? 'wp-course'));
+        $shortname = $this->unique_shortname((string)xml::value($data['shortname'] ?? ''), $oldid);
         $categoryid = (int)($this->options['coursecategory'] ?? 0);
         if ($categoryid < 1 || !$DB->record_exists('course_categories', ['id' => $categoryid])) {
             $categoryid = \core_course_category::get_default()->id;
@@ -220,13 +236,14 @@ class course_importer {
 
     /**
      * @param string $shortname
+     * @param int $oldid
      * @return string
      */
-    protected function unique_shortname(string $shortname): string {
+    protected function unique_shortname(string $shortname, int $oldid): string {
         global $DB;
 
         if ($shortname === '') {
-            $shortname = 'wp-course';
+            $shortname = 'wp-c-' . $oldid;
         }
         $base = $shortname;
         $i = 2;

@@ -434,7 +434,7 @@ class program_importer {
 
         $oldprogramid = xml::int($data['programid'] ?? 0);
         $olduserid = xml::int($data['userid'] ?? 0);
-        $programid = $this->mapping->get('program', $oldprogramid);
+        $programid = $this->mapping->get_existing('program', $oldprogramid, 'local_program');
         $userid = $this->resolve_user($olduserid);
 
         if (!$programid || !$userid) {
@@ -455,6 +455,9 @@ class program_importer {
             'userid' => $userid,
             'assignmenttype' => program_constants::ASSIGNMENT_MANUAL,
         ])) {
+            if ($status && !empty($this->options['enrolprogramusers'])) {
+                assignment_manager::assign_user($programid, $userid, (int)($USER->id ?? 0), true);
+            }
             $this->job->bump_count('program_users', 'mapped');
             return;
         }
@@ -567,7 +570,7 @@ class program_importer {
      * @return int|null
      */
     protected function resolve_user(int $olduserid): ?int {
-        $mapped = $this->mapping->get('user', $olduserid);
+        $mapped = $this->mapping->get_existing('user', $olduserid, 'user', ['deleted' => 0]);
         if ($mapped) {
             return $mapped;
         }

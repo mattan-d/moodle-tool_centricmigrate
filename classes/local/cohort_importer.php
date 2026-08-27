@@ -49,7 +49,7 @@ class cohort_importer {
             if ($this->mapping->get('cohort', $oldid)) {
                 continue;
             }
-            $existing = $this->find_existing($data);
+            $existing = $this->find_existing($oldid, $data);
             if ($existing) {
                 $this->mapping->set('cohort', $oldid, (int)$existing->id);
                 $this->job->bump_count('cohort', 'mapped');
@@ -71,7 +71,7 @@ class cohort_importer {
      * @param array $data
      */
     protected function import_cohort(int $oldid, array $data): void {
-        $existing = $this->find_existing($data);
+        $existing = $this->find_existing($oldid, $data);
         if ($existing) {
             $this->mapping->set('cohort', $oldid, (int)$existing->id);
             $this->job->bump_count('cohort', 'mapped');
@@ -93,6 +93,9 @@ class cohort_importer {
         ];
         if ($cohort->name === '') {
             $cohort->name = 'wp-cohort-' . $oldid;
+        }
+        if ($cohort->idnumber === '') {
+            $cohort->idnumber = 'wp-cohort-' . $oldid;
         }
 
         $newid = cohort_add_cohort($cohort);
@@ -121,9 +124,12 @@ class cohort_importer {
             return;
         }
 
-        if (!cohort_is_member($cohortid, $userid)) {
-            cohort_add_member($cohortid, $userid);
+        if (cohort_is_member($cohortid, $userid)) {
+            $this->job->bump_count('cohort_members', 'mapped');
+            return;
         }
+
+        cohort_add_member($cohortid, $userid);
         $this->job->bump_count('cohort_members', 'created');
         $this->job->log('info', get_string('log:memberadded', 'tool_centricmigrate', [
             'userid' => $userid,
@@ -132,11 +138,20 @@ class cohort_importer {
     }
 
     /**
+     * @param int $oldid
      * @param array $data
      * @return \stdClass|null
      */
-    protected function find_existing(array $data): ?\stdClass {
+    protected function find_existing(int $oldid, array $data): ?\stdClass {
         global $DB;
+
+        $mapped = $this->mapping->get_existing('cohort', $oldid, 'cohort');
+        if ($mapped) {
+            $cohort = $DB->get_record('cohort', ['id' => $mapped]);
+            if ($cohort) {
+                return $cohort;
+            }
+        }
 
         $idnumber = trim((string)xml::value($data['idnumber'] ?? ''));
         $contextid = \context_system::instance()->id;
@@ -145,6 +160,12 @@ class cohort_importer {
             if ($cohort) {
                 return $cohort;
             }
+        }
+
+        $stable = 'wp-cohort-' . $oldid;
+        $cohort = $DB->get_record('cohort', ['idnumber' => $stable, 'contextid' => $contextid]);
+        if ($cohort) {
+            return $cohort;
         }
 
         $name = trim((string)xml::value($data['name'] ?? ''));
@@ -163,7 +184,7 @@ class cohort_importer {
      * @return int|null
      */
     protected function resolve_user(int $olduserid): ?int {
-        $mapped = $this->mapping->get('user', $olduserid);
+        $mapped = $this->mapping->get_existing('user', $olduserid, 'user', ['deleted' => 0]);
         if ($mapped) {
             return $mapped;
         }

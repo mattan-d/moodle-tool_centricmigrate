@@ -183,7 +183,7 @@ class user_importer {
     protected function find_existing(int $oldid, array $data): ?\stdClass {
         global $DB, $CFG;
 
-        $mapped = $this->mapping->get('user', $oldid);
+        $mapped = $this->mapping->get_existing('user', $oldid, 'user', ['deleted' => 0]);
         if ($mapped) {
             $user = $DB->get_record('user', ['id' => $mapped, 'deleted' => 0]);
             if ($user) {

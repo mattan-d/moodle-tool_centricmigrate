@@ -48,10 +48,8 @@ if ($jobid && $action === 'run') {
             'id' => 'tool-centricmigrate-continue',
             'class' => 'btn btn-primary',
         ]);
-        $PAGE->requires->js_amd_inline(
-            "require(['jquery'], function($) { setTimeout(function() { window.location = " .
-            json_encode($continueurl->out(false)) . "; }, 400); });"
-        );
+        echo html_writer::script('setTimeout(function() { window.location = ' .
+            json_encode($continueurl->out(false)) . '; }, 400);');
         echo $OUTPUT->footer();
         exit;
     }

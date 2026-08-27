@@ -146,11 +146,11 @@ class course_importer {
      * @return int
      */
     protected function restore_from_hash(string $hash, array $data): int {
-        global $USER, $CFG, $DB;
+        global $USER, $DB;
 
         $mbz = $this->package->extract_content($hash);
         $folder = 'cm' . time() . '_' . random_int(1000, 9999);
-        $tempdir = make_backup_temp_directory($folder, false);
+        $tempdir = make_backup_temp_directory($folder);
         $packer = get_file_packer('application/vnd.moodle.backup');
         $extracted = $packer->extract_to_pathname($mbz, $tempdir);
         if (!$extracted) {
@@ -166,30 +166,48 @@ class course_importer {
 
         $courseid = \restore_dbops::create_new_course($fullname, $shortname, $categoryid);
 
-        $rc = new \restore_controller(
-            $folder,
-            $courseid,
-            \backup::INTERACTIVE_NO,
-            \backup::MODE_GENERAL,
-            $USER->id,
-            \backup::TARGET_NEW_COURSE
-        );
+        $rc = null;
+        try {
+            $rc = new \restore_controller(
+                $folder,
+                $courseid,
+                \backup::INTERACTIVE_NO,
+                \backup::MODE_GENERAL,
+                $USER->id,
+                \backup::TARGET_NEW_COURSE
+            );
 
-        if ($rc->get_status() == \backup::STATUS_REQUIRE_CONV) {
-            $rc->convert();
+            if ($rc->get_status() == \backup::STATUS_REQUIRE_CONV) {
+                $rc->convert();
+            }
+
+            $plan = $rc->get_plan();
+            if ($plan->setting_exists('users')) {
+                $usersetting = $plan->get_setting('users');
+                if (!$usersetting->is_locked()) {
+                    $usersetting->set_value(false);
+                }
+            }
+
+            $precheck = $rc->execute_precheck();
+            if ($precheck === false) {
+                $results = $rc->get_precheck_results();
+                $detail = !empty($results['errors']) ? implode('; ', (array)$results['errors']) : 'precheck';
+                throw new \moodle_exception('error:restorefailed', 'tool_centricmigrate', '', $detail);
+            }
+            $rc->execute_plan();
+        } catch (\Throwable $e) {
+            if (!empty($courseid)) {
+                delete_course($courseid, false);
+            }
+            throw $e;
+        } finally {
+            if ($rc) {
+                $rc->destroy();
+            }
+            fulldelete($tempdir);
+            @unlink($mbz);
         }
-
-        $plan = $rc->get_plan();
-        if ($plan->setting_exists('users')) {
-            $plan->get_setting('users')->set_value(false);
-        }
-
-        $rc->execute_precheck();
-        $rc->execute_plan();
-        $rc->destroy();
-
-        fulldelete($tempdir);
-        @unlink($mbz);
 
         $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
         $course->visible = xml::int($data['visible'] ?? 1, 1);

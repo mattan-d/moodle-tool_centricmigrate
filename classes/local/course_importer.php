@@ -184,7 +184,7 @@ class course_importer {
             $plan = $rc->get_plan();
             if ($plan->setting_exists('users')) {
                 $usersetting = $plan->get_setting('users');
-                if (!$usersetting->is_locked()) {
+                if ($usersetting->get_status() == \base_setting::NOT_LOCKED) {
                     $usersetting->set_value(false);
                 }
             }

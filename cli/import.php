@@ -50,7 +50,7 @@ Options:
 --authfallback=PLUGIN       Auth plugin if the original one is missing (default manual)
 --importcohorts=0|1         Import cohorts (default 1)
 --importcohortmembers=0|1   Import cohort members (default 1)
---importcourses=0|1         Restore missing courses from embedded backups (default 1)
+--importcourses=0|1         Restore missing courses and copy missing course files (default 1)
 --coursecategory=ID         Category id for restored courses (default site default)
 --importprograms=0|1        Import programs into local_program (default 1)
 --importprogramusers=0|1    Import program allocations (default 1)

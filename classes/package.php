@@ -168,27 +168,68 @@ class package implements \IteratorAggregate {
     }
 
     /**
+     * Workplace file-pool path inside the zip (Moodle filedir layout).
+     *
+     * @param string $contenthash
+     * @return string
+     */
+    public function content_zip_path(string $contenthash): string {
+        return 'files/' . substr($contenthash, 0, 2) . '/' . substr($contenthash, 2, 2) . '/' . $contenthash;
+    }
+
+    /**
+     * Whether the zip contains a hashed content blob.
+     *
+     * @param string $contenthash
+     * @return bool
+     */
+    public function has_content(string $contenthash): bool {
+        if ($contenthash === '') {
+            return false;
+        }
+        return $this->zip->locateName($this->content_zip_path($contenthash)) !== false;
+    }
+
+    /**
      * Extract a hashed content file to a temp path.
      *
      * @param string $contenthash
      * @return string Absolute path
      */
     public function extract_content(string $contenthash): string {
-        $zippath = 'files/' . substr($contenthash, 0, 2) . '/' . substr($contenthash, 2, 2) . '/' . $contenthash;
         $dir = make_temp_directory('centricmigrate/files');
         $target = $dir . '/' . $contenthash;
         if (file_exists($target) && filesize($target) > 0) {
             return $target;
         }
-        $stream = $this->zip->getStream($zippath);
+        $this->extract_content_to($contenthash, $target);
+        return $target;
+    }
+
+    /**
+     * Extract a hashed content file to an explicit destination path.
+     *
+     * @param string $contenthash
+     * @param string $target Absolute path
+     */
+    public function extract_content_to(string $contenthash, string $target): void {
+        $stream = $this->zip->getStream($this->content_zip_path($contenthash));
         if ($stream === false) {
             throw new \moodle_exception('error:unzip', 'tool_centricmigrate');
         }
+        $dir = dirname($target);
+        if (!is_dir($dir) && !check_dir_exists($dir, true, true)) {
+            fclose($stream);
+            throw new \moodle_exception('error:unzip', 'tool_centricmigrate');
+        }
         $out = fopen($target, 'wb');
+        if ($out === false) {
+            fclose($stream);
+            throw new \moodle_exception('error:unzip', 'tool_centricmigrate');
+        }
         stream_copy_to_stream($stream, $out);
         fclose($out);
         fclose($stream);
-        return $target;
     }
 
     /**

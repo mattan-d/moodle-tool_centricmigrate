@@ -30,6 +30,29 @@ final class package_test extends \advanced_testcase {
         $this->assertSame(10, $user['_oldid']);
     }
 
+    public function test_extract_content_to_filedir_layout(): void {
+        $content = 'workplace-file-blob';
+        $hash = sha1($content);
+        $path = make_temp_directory('centricmigrate_tests') . '/files.zip';
+        $zip = new \ZipArchive();
+        $zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $zip->addFromString('workplace.xml', '<workplace>
+            <exporter>test</exporter>
+            <siteidentifier>abc123</siteidentifier>
+        </workplace>');
+        $zip->addFromString('files/' . substr($hash, 0, 2) . '/' . substr($hash, 2, 2) . '/' . $hash, $content);
+        $zip->close();
+
+        $package = new package($path);
+        $this->assertTrue($package->has_content($hash));
+        $this->assertFalse($package->has_content(str_repeat('0', 40)));
+
+        $target = make_temp_directory('centricmigrate_tests') . '/out/' . $hash;
+        $package->extract_content_to($hash, $target);
+        $package->close();
+        $this->assertSame($content, file_get_contents($target));
+    }
+
     /**
      * @return string
      */

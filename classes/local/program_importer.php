@@ -180,27 +180,43 @@ class program_importer {
     }
 
     /**
+     * Stable shortname used to recognise a previously imported program.
+     *
+     * @param string $idnumber
+     * @param int $oldid
+     * @return string
+     */
+    public static function canonical_shortname(string $idnumber, int $oldid): string {
+        $idnumber = trim($idnumber);
+        return $idnumber !== '' ? $idnumber : 'wp-' . $oldid;
+    }
+
+    /**
      * @param int $oldid
      * @param array $data
      */
     protected function import_program(int $oldid, array $data): void {
-        $existing = $this->find_existing($oldid, $data);
-        if ($existing) {
-            $this->mapping->set('program', $oldid, (int)$existing->get('id'));
-            $this->job->bump_count('program', 'mapped');
-            $this->job->log('info', get_string('log:programmapped', 'tool_centricmigrate', [
-                'name' => $existing->get('name'),
-                'newid' => $existing->get('id'),
-            ]), 'tool_program', $oldid);
-            return;
-        }
-
         $sets = xml::items($data, 'tool_program_sets', 'tool_program_set');
         $rootset = $this->get_root_set($sets);
         $completion = self::map_completion(
             xml::int($rootset['completioncriteria'] ?? 0),
             xml::int($rootset['completionatleast'] ?? 1, 1)
         );
+        $courses = xml::items($data, 'tool_program_courses', 'tool_program_course');
+
+        $existing = $this->find_existing($oldid, $data);
+        if ($existing) {
+            $programid = (int)$existing->get('id');
+            $this->mapping->set('program', $oldid, $programid);
+            $this->import_content($programid, $sets, $courses, $completion);
+            $this->import_program_files($programid, $data);
+            $this->job->bump_count('program', 'mapped');
+            $this->job->log('info', get_string('log:programmapped', 'tool_centricmigrate', [
+                'name' => $existing->get('name'),
+                'newid' => $programid,
+            ]), 'tool_program', $oldid);
+            return;
+        }
 
         $startdate = self::map_date(
             xml::int($data['startdatetype'] ?? 0),
@@ -274,7 +290,7 @@ class program_importer {
         $program->create();
         $programid = (int)$program->get('id');
 
-        $this->import_content($programid, $sets, xml::items($data, 'tool_program_courses', 'tool_program_course'), $completion);
+        $this->import_content($programid, $sets, $courses, $completion);
         $this->import_program_files($programid, $data);
 
         $this->mapping->set('program', $oldid, $programid);
@@ -292,6 +308,8 @@ class program_importer {
      * @param array $rootcompletion
      */
     protected function import_content(int $programid, array $sets, array $courses, array $rootcompletion): void {
+        global $DB;
+
         $setmap = [];
         usort($sets, static function ($a, $b) {
             return xml::int($a['parent'] ?? 0) <=> xml::int($b['parent'] ?? 0);
@@ -310,6 +328,23 @@ class program_importer {
             }
 
             $parentid = $isroot ? 0 : ($setmap[$parentold] ?? 0);
+            $existingid = $this->mapping->get_existing('program_set', $oldsetid, 'local_program_content');
+            if ($existingid) {
+                $setmap[$oldsetid] = $existingid;
+                continue;
+            }
+            $existingset = $DB->get_record('local_program_content', [
+                'programid' => $programid,
+                'parentid' => $parentid,
+                'itemtype' => program_content::TYPE_SET,
+                'name' => $name !== '' ? $name : get_string('setofcourses', 'local_program'),
+            ]);
+            if ($existingset) {
+                $setmap[$oldsetid] = (int)$existingset->id;
+                $this->mapping->set('program_set', $oldsetid, (int)$existingset->id);
+                continue;
+            }
+
             $completion = self::map_completion(
                 xml::int($set['completioncriteria'] ?? 0),
                 xml::int($set['completionatleast'] ?? 1, 1)
@@ -332,11 +367,13 @@ class program_importer {
             ]);
             $item->create();
             $setmap[$oldsetid] = (int)$item->get('id');
+            $this->mapping->set('program_set', $oldsetid, (int)$item->get('id'));
         }
 
         foreach ($courses as $course) {
             $oldcourseid = xml::int($course['courseid'] ?? 0);
-            $newcourseid = $this->mapping->get('course', $oldcourseid);
+            $oldcontentid = xml::int($course['id'] ?? 0);
+            $newcourseid = $this->mapping->get_existing('course', $oldcourseid, 'course');
             if (!$newcourseid) {
                 $newcourseid = $this->match_course_from_package($oldcourseid);
             }
@@ -345,6 +382,28 @@ class program_importer {
                     'tool_program');
                 continue;
             }
+
+            if ($oldcontentid && $this->mapping->get_existing('program_course', $oldcontentid, 'local_program_content')) {
+                continue;
+            }
+            if ($DB->record_exists('local_program_content', [
+                'programid' => $programid,
+                'itemtype' => program_content::TYPE_COURSE,
+                'courseid' => $newcourseid,
+            ])) {
+                if ($oldcontentid) {
+                    $existingcontent = $DB->get_field('local_program_content', 'id', [
+                        'programid' => $programid,
+                        'itemtype' => program_content::TYPE_COURSE,
+                        'courseid' => $newcourseid,
+                    ]);
+                    if ($existingcontent) {
+                        $this->mapping->set('program_course', $oldcontentid, (int)$existingcontent);
+                    }
+                }
+                continue;
+            }
+
             $oldsetid = xml::int($course['setid'] ?? 0);
             $now = time();
             $item = new program_content(0, (object)[
@@ -360,6 +419,9 @@ class program_importer {
                 'timemodified' => $now,
             ]);
             $item->create();
+            if ($oldcontentid) {
+                $this->mapping->set('program_course', $oldcontentid, (int)$item->get('id'));
+            }
         }
     }
 
@@ -430,7 +492,7 @@ class program_importer {
      * @return program|null
      */
     protected function find_existing(int $oldid, array $data): ?program {
-        $mapped = $this->mapping->get('program', $oldid);
+        $mapped = $this->mapping->get_existing('program', $oldid, 'local_program');
         if ($mapped) {
             $program = program::get_record(['id' => $mapped], IGNORE_MISSING);
             if ($program) {
@@ -438,19 +500,17 @@ class program_importer {
             }
         }
 
+        $canonical = self::canonical_shortname((string)xml::value($data['idnumber'] ?? ''), $oldid);
+        $program = program::get_record(['shortname' => $canonical], IGNORE_MISSING);
+        if ($program) {
+            return $program;
+        }
+
         $idnumber = trim((string)xml::value($data['idnumber'] ?? ''));
-        if ($idnumber !== '') {
+        if ($idnumber !== '' && $idnumber !== $canonical) {
             $program = program::get_record(['shortname' => $idnumber], IGNORE_MISSING);
             if ($program) {
                 return $program;
-            }
-        }
-
-        $name = trim((string)xml::value($data['fullname'] ?? ''));
-        if ($name !== '') {
-            $matches = program::get_records(['name' => $name]);
-            if (count($matches) === 1) {
-                return reset($matches);
             }
         }
 
@@ -478,10 +538,7 @@ class program_importer {
     protected function unique_shortname(string $idnumber, int $oldid): string {
         global $DB;
 
-        $shortname = trim($idnumber);
-        if ($shortname === '') {
-            $shortname = 'wp-' . $oldid;
-        }
+        $shortname = self::canonical_shortname($idnumber, $oldid);
         $base = $shortname;
         $i = 2;
         while ($DB->record_exists('local_program', ['shortname' => $shortname])) {
@@ -554,12 +611,16 @@ class program_importer {
             } catch (\Throwable $e) {
                 continue;
             }
+            $filepath = (string)(xml::value($file['filepath'] ?? '/') ?: '/');
+            if ($fs->file_exists($context->id, 'local_program', $targetarea, $programid, $filepath, $filename)) {
+                continue;
+            }
             $fs->create_file_from_pathname([
                 'contextid' => $context->id,
                 'component' => 'local_program',
                 'filearea' => $targetarea,
                 'itemid' => $programid,
-                'filepath' => (string)(xml::value($file['filepath'] ?? '/') ?: '/'),
+                'filepath' => $filepath,
                 'filename' => $filename,
             ], $source);
         }

@@ -47,6 +47,45 @@ class mapping {
     }
 
     /**
+     * Get a mapped id only if the target record still exists.
+     *
+     * @param string $entity
+     * @param int $oldid
+     * @param string $table
+     * @param array $extra Extra record conditions (e.g. deleted => 0).
+     * @return int|null
+     */
+    public function get_existing(string $entity, int $oldid, string $table, array $extra = []): ?int {
+        global $DB;
+
+        $newid = $this->get($entity, $oldid);
+        if (!$newid) {
+            return null;
+        }
+        $conditions = array_merge(['id' => $newid], $extra);
+        if (!$DB->record_exists($table, $conditions)) {
+            $this->delete($entity, $oldid);
+            return null;
+        }
+        return $newid;
+    }
+
+    /**
+     * @param string $entity
+     * @param int $oldid
+     */
+    public function delete(string $entity, int $oldid): void {
+        global $DB;
+
+        $DB->delete_records('tool_centricmigrate_map', [
+            'siteidentifier' => $this->siteidentifier,
+            'entity' => $entity,
+            'oldid' => $oldid,
+        ]);
+        unset($this->cache[$entity . ':' . $oldid]);
+    }
+
+    /**
      * @param string $entity
      * @param int $oldid
      * @param int $newid

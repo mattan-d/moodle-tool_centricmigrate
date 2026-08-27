@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="admin/tool/centricmigrate/db" VERSION="2026082700" COMMENT="Workplace migration import tables" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../../lib/xmldb/xmldb.xsd">
+    <TABLES>
+        <TABLE NAME="tool_centricmigrate_job" COMMENT="Workplace import jobs">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="filename" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="sourcepath" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="siteidentifier" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="exporter" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+                <FIELD NAME="options" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="step" TYPE="char" LENGTH="40" NOTNULL="true" DEFAULT="preview" SEQUENCE="false"/>
+                <FIELD NAME="cursorpos" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="counts" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="logs" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="errormsg" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="userid_status_ix" UNIQUE="false" FIELDS="userid, status"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="tool_centricmigrate_map" COMMENT="Old Workplace id to local id mappings">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="siteidentifier" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="entity" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="oldid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="newid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="site_entity_oldid_uix" UNIQUE="true" FIELDS="siteidentifier, entity, oldid"/>
+                <INDEX NAME="entity_newid_ix" UNIQUE="false" FIELDS="entity, newid"/>
+            </INDEXES>
+        </TABLE>
+    </TABLES>
+</XMLDB>

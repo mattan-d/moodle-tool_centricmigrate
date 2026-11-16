@@ -18,6 +18,7 @@ class job {
     public const STEP_USERS = 'users';
     public const STEP_COHORTS = 'cohorts';
     public const STEP_MEMBERS = 'members';
+    public const STEP_CATEGORIES = 'categories';
     public const STEP_COURSES = 'courses';
     public const STEP_PROGRAMS = 'programs';
     public const STEP_ALLOCATIONS = 'allocations';

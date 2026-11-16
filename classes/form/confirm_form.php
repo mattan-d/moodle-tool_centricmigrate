@@ -49,6 +49,12 @@ class confirm_form extends \moodleform {
             $mform->setDefault('importcohortmembers', 1);
         }
 
+        if (!empty($summary['categories'])) {
+            $mform->addElement('advcheckbox', 'importcategories', get_string('importcategories', 'tool_centricmigrate'));
+            $mform->setDefault('importcategories', 1);
+            $mform->addHelpButton('importcategories', 'importcategories', 'tool_centricmigrate');
+        }
+
         if (!empty($summary['courses'])) {
             $mform->addElement('advcheckbox', 'importcourses', get_string('importcourses', 'tool_centricmigrate'));
             $mform->setDefault('importcourses', 1);

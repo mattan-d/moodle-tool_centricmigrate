@@ -125,6 +125,7 @@ if ($jobid) {
             'authfallback' => $confirmdata->authfallback ?? 'manual',
             'importcohorts' => (int)($confirmdata->importcohorts ?? 0),
             'importcohortmembers' => (int)($confirmdata->importcohortmembers ?? 0),
+            'importcategories' => (int)($confirmdata->importcategories ?? 0),
             'importcourses' => (int)($confirmdata->importcourses ?? 0),
             'coursecategory' => (int)($confirmdata->coursecategory ?? 0),
             'importprograms' => (int)($confirmdata->importprograms ?? 0),
@@ -179,15 +180,21 @@ function render_package_preview(array $summary): string {
     if (!$iscsv) {
         $table->data[] = [get_string('sourceinfo', 'tool_centricmigrate'), s($summary['wwwroot'])];
     }
-    $table->data[] = [
-        get_string('exporter', 'tool_centricmigrate'),
-        $iscsv ? get_string('csvusers', 'tool_centricmigrate') : s($summary['exporter']),
-    ];
+    $csvlbl = $summary['exporter'] ?? '';
+    if ($csvlbl === 'csv_categories') {
+        $csvlbl = get_string('csvcategories', 'tool_centricmigrate');
+    } else if ($iscsv) {
+        $csvlbl = get_string('csvusers', 'tool_centricmigrate');
+    } else {
+        $csvlbl = s($summary['exporter']);
+    }
+    $table->data[] = [get_string('exporter', 'tool_centricmigrate'), $csvlbl];
     if (!$iscsv) {
         $table->data[] = [get_string('releasedata', 'tool_centricmigrate'), s($summary['release'])];
         $table->data[] = [get_string('createdby', 'tool_centricmigrate'), s($summary['createdbyname'])];
     }
     $table->data[] = [get_string('countusers', 'tool_centricmigrate'), $summary['users']];
+    $table->data[] = [get_string('countcategories', 'tool_centricmigrate'), $summary['categories'] ?? 0];
     $table->data[] = [get_string('countcohorts', 'tool_centricmigrate'), $summary['cohorts']];
     $table->data[] = [get_string('countcohortmembers', 'tool_centricmigrate'), $summary['cohortmembers']];
     $table->data[] = [get_string('countcourses', 'tool_centricmigrate'), $summary['courses']];

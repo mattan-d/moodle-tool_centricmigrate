@@ -21,6 +21,7 @@ list($options, $unrecognized) = cli_get_params([
     'authfallback' => 'manual',
     'importcohorts' => true,
     'importcohortmembers' => true,
+    'importcategories' => true,
     'importcourses' => true,
     'coursecategory' => 0,
     'importprograms' => true,
@@ -39,17 +40,18 @@ if ($unrecognized) {
 
 if ($options['help'] || empty($options['file'])) {
     $help = <<<EOT
-Import a Moodle Workplace migration zip or a Moodle user CSV.
+Import a Moodle Workplace migration zip, a user CSV, or a course category CSV.
 
 Options:
 -h, --help                  Print this help
--f, --file=PATH             Path to the Workplace export zip or user CSV (required)
+-f, --file=PATH             Path to the Workplace zip, user CSV, or category CSV (required)
 -u, --userid=ID             User id to run the import as (default: first site admin)
 --importusers=0|1           Import user records (default 1)
 --updateusers=0|1           Update existing users (default 0)
 --authfallback=PLUGIN       Auth plugin if the original one is missing (default manual)
 --importcohorts=0|1         Import cohorts (default 1)
 --importcohortmembers=0|1   Import cohort members (default 1)
+--importcategories=0|1      Create course categories from a category CSV (default 1)
 --importcourses=0|1         Restore missing courses and copy missing course files (default 1)
 --coursecategory=ID         Category id for restored courses (default site default)
 --importprograms=0|1        Import programs into local_program (default 1)
@@ -59,6 +61,7 @@ Options:
 Example:
 \$ php admin/tool/centricmigrate/cli/import.php --file=/path/to/programs-export.zip
 \$ php admin/tool/centricmigrate/cli/import.php --file=/path/to/users.csv
+\$ php admin/tool/centricmigrate/cli/import.php --file=/path/to/categories.csv
 
 EOT;
     echo $help;
@@ -107,6 +110,7 @@ $job = job::create([
         'authfallback' => (string)$options['authfallback'],
         'importcohorts' => cli_flag_enabled($options['importcohorts'], true),
         'importcohortmembers' => cli_flag_enabled($options['importcohortmembers'], true),
+        'importcategories' => cli_flag_enabled($options['importcategories'], true),
         'importcourses' => cli_flag_enabled($options['importcourses'], true),
         'coursecategory' => (int)$options['coursecategory'],
         'importprograms' => cli_flag_enabled($options['importprograms'], true) && program_importer::is_available(),

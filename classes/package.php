@@ -41,6 +41,9 @@ class package implements \IteratorAggregate {
     /** @var array entity => oldid => record */
     protected $csvrecords = [];
 
+    /** @var string users|categories */
+    protected $csvkind = '';
+
     /**
      * @param string $filepath Absolute path to a Workplace zip or user CSV.
      */
@@ -106,7 +109,7 @@ class package implements \IteratorAggregate {
         }
         if ($this->format === self::FORMAT_CSV) {
             $this->manifest = [
-                'exporter' => 'csv_users',
+                'exporter' => $this->csvkind === 'categories' ? 'csv_categories' : 'csv_users',
                 'wwwroot' => '',
                 'siteidentifier' => 'csv:' . substr(sha1_file($this->filepath), 0, 32),
                 'release' => '',
@@ -311,7 +314,9 @@ class package implements \IteratorAggregate {
             'dynamicrules' => $this->count_entities('tool_dynamicrule'),
             'usermappings' => $this->count_entities('user', 'mappings'),
             'cohortmappings' => $this->count_entities('cohort', 'mappings'),
+            'categories' => $this->count_entities('coursecategory'),
             'format' => $this->format,
+            'csvkind' => $this->csvkind,
         ];
     }
 
@@ -332,7 +337,7 @@ class package implements \IteratorAggregate {
     }
 
     /**
-     * Load a Moodle user-export CSV (id, username, email, firstname, ...).
+     * Load a user CSV or a course-category report CSV.
      */
     protected function load_csv(): void {
         $handle = fopen($this->filepath, 'rb');
@@ -350,34 +355,86 @@ class package implements \IteratorAggregate {
         }
         $delimiter = self::detect_csv_delimiter($first);
         $header = str_getcsv($first, $delimiter);
-        $header = array_map(static function ($name) {
-            return strtolower(trim((string)$name));
-        }, $header);
+        $header = array_map([self::class, 'normalize_csv_header'], $header);
 
-        $usernamecol = array_search('username', $header, true);
-        if ($usernamecol === false) {
-            fclose($handle);
-            throw new \moodle_exception('error:invalidcsv', 'tool_centricmigrate');
+        if (in_array('username', $header, true)) {
+            $this->load_user_csv_rows($handle, $delimiter, $header);
+            return;
+        }
+        if (in_array('name', $header, true) && (in_array('path', $header, true) || in_array('idnumber', $header, true))) {
+            $this->load_category_csv_rows($handle, $delimiter, $header);
+            return;
         }
 
+        fclose($handle);
+        throw new \moodle_exception('error:invalidcsv', 'tool_centricmigrate');
+    }
+
+    /**
+     * Map Hebrew/English CSV headers to internal field names.
+     *
+     * @param mixed $name
+     * @return string
+     */
+    public static function normalize_csv_header($name): string {
+        $name = trim((string)$name);
+        $lower = \core_text::strtolower($name);
+        $map = [
+            'username' => 'username',
+            'id' => 'id',
+            'email' => 'email',
+            'firstname' => 'firstname',
+            'lastname' => 'lastname',
+            'idnumber' => 'idnumber',
+            'name' => 'name',
+            'path' => 'path',
+            'category name' => 'name',
+            'category path' => 'path',
+            'category idnumber' => 'idnumber',
+            'course count' => 'coursecount',
+            'שם הקטגוריה' => 'name',
+            'נתיב קטגוריה' => 'path',
+            'מספר זיהוי של קטגוריה' => 'idnumber',
+        ];
+        return $map[$lower] ?? $map[$name] ?? $lower;
+    }
+
+    /**
+     * Split a Moodle category-report path. Separator is " / " so names like UX/UI stay intact.
+     *
+     * @param string $path
+     * @param string $name
+     * @return string[]
+     */
+    public static function split_category_path(string $path, string $name = ''): array {
+        $path = trim($path);
+        $name = trim($name);
+        if ($path === '') {
+            return $name === '' ? [] : [$name];
+        }
+        $parts = preg_split('/\s+\/\s+/u', $path) ?: [];
+        $parts = array_values(array_filter(array_map('trim', $parts), static function ($part) {
+            return $part !== '';
+        }));
+        return $parts ?: ($name === '' ? [] : [$name]);
+    }
+
+    /**
+     * @param resource $handle
+     * @param string $delimiter
+     * @param array $header
+     */
+    protected function load_user_csv_rows($handle, string $delimiter, array $header): void {
+        $this->csvkind = 'users';
         $this->index = ['data' => ['user' => []], 'mappings' => []];
         $this->csvrecords = ['data' => ['user' => []], 'mappings' => []];
         $linenumber = 1;
         while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
             $linenumber++;
-            if ($row === [null] || $row === false) {
-                continue;
-            }
             if ($this->csv_row_empty($row)) {
                 continue;
             }
-            $assoc = [];
-            foreach ($header as $i => $name) {
-                if ($name === '') {
-                    continue;
-                }
-                $assoc[$name] = isset($row[$i]) ? trim((string)$row[$i]) : '';
-            }
+            $assoc = $this->csv_row_assoc($header, $row);
             $username = \core_text::strtolower(trim($assoc['username'] ?? ''));
             if ($username === '') {
                 continue;
@@ -400,6 +457,69 @@ class package implements \IteratorAggregate {
             throw new \moodle_exception('error:invalidcsv', 'tool_centricmigrate');
         }
         ksort($this->index['data']['user'], SORT_NUMERIC);
+    }
+
+    /**
+     * @param resource $handle
+     * @param string $delimiter
+     * @param array $header
+     */
+    protected function load_category_csv_rows($handle, string $delimiter, array $header): void {
+        $this->csvkind = 'categories';
+        $this->index = ['data' => ['coursecategory' => []], 'mappings' => []];
+        $this->csvrecords = ['data' => ['coursecategory' => []], 'mappings' => []];
+        $linenumber = 1;
+        while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+            $linenumber++;
+            if ($this->csv_row_empty($row)) {
+                continue;
+            }
+            $assoc = $this->csv_row_assoc($header, $row);
+            $name = trim($assoc['name'] ?? '');
+            $path = trim($assoc['path'] ?? '');
+            if ($name === '' && $path === '') {
+                continue;
+            }
+            $segments = self::split_category_path($path, $name);
+            if ($segments === []) {
+                continue;
+            }
+            if ($name === '') {
+                $name = end($segments);
+            }
+            $oldid = $linenumber;
+            $record = [
+                'name' => $name,
+                'idnumber' => trim($assoc['idnumber'] ?? ''),
+                'path' => $path !== '' ? $path : $name,
+                'segments' => $segments,
+                '_oldid' => $oldid,
+            ];
+            $this->csvrecords['data']['coursecategory'][$oldid] = $record;
+            $this->index['data']['coursecategory'][$oldid] = 'csv:coursecategory:' . $oldid;
+        }
+        fclose($handle);
+
+        if (empty($this->index['data']['coursecategory'])) {
+            throw new \moodle_exception('error:invalidcsv', 'tool_centricmigrate');
+        }
+        ksort($this->index['data']['coursecategory'], SORT_NUMERIC);
+    }
+
+    /**
+     * @param array $header
+     * @param array $row
+     * @return array
+     */
+    protected function csv_row_assoc(array $header, array $row): array {
+        $assoc = [];
+        foreach ($header as $i => $name) {
+            if ($name === '') {
+                continue;
+            }
+            $assoc[$name] = isset($row[$i]) ? trim((string)$row[$i]) : '';
+        }
+        return $assoc;
     }
 
     /**

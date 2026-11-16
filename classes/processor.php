@@ -5,6 +5,7 @@ namespace tool_centricmigrate;
 
 defined('MOODLE_INTERNAL') || die();
 
+use tool_centricmigrate\local\category_importer;
 use tool_centricmigrate\local\cohort_importer;
 use tool_centricmigrate\local\course_importer;
 use tool_centricmigrate\local\program_importer;
@@ -76,6 +77,9 @@ class processor {
                 case job::STEP_MEMBERS:
                     $this->run_members($options);
                     break;
+                case job::STEP_CATEGORIES:
+                    $this->run_categories($options);
+                    break;
                 case job::STEP_COURSES:
                     $this->run_courses($options, $cli);
                     break;
@@ -112,6 +116,10 @@ class processor {
         }
         if ($step === job::STEP_USERS) {
             $total = $this->package->count_entities('user');
+            return $label . ': ' . min($cursor, $total) . ' / ' . $total;
+        }
+        if ($step === job::STEP_CATEGORIES) {
+            $total = $this->package->count_entities('coursecategory');
             return $label . ': ' . min($cursor, $total) . ' / ' . $total;
         }
         return $label;
@@ -175,6 +183,17 @@ class processor {
             $importer->import_members();
         }
         $this->advance(job::STEP_MEMBERS, $options);
+    }
+
+    /**
+     * @param array $options
+     */
+    protected function run_categories(array $options): void {
+        if (!empty($options['importcategories'])) {
+            $importer = new category_importer($this->package, $this->mapping, $this->job);
+            $importer->import_all();
+        }
+        $this->advance(job::STEP_CATEGORIES, $options);
     }
 
     /**
@@ -243,7 +262,8 @@ class processor {
         $order = [
             job::STEP_USERS => job::STEP_COHORTS,
             job::STEP_COHORTS => job::STEP_MEMBERS,
-            job::STEP_MEMBERS => job::STEP_COURSES,
+            job::STEP_MEMBERS => job::STEP_CATEGORIES,
+            job::STEP_CATEGORIES => job::STEP_COURSES,
             job::STEP_COURSES => job::STEP_PROGRAMS,
             job::STEP_PROGRAMS => job::STEP_ALLOCATIONS,
             job::STEP_ALLOCATIONS => job::STEP_DONE,
@@ -264,6 +284,7 @@ class processor {
             job::STEP_USERS => !empty($options['importusers']) && $summary['users'] > 0,
             job::STEP_COHORTS => !empty($options['importcohorts']) && $summary['cohorts'] > 0,
             job::STEP_MEMBERS => !empty($options['importcohortmembers']) && $summary['cohortmembers'] > 0,
+            job::STEP_CATEGORIES => !empty($options['importcategories']) && !empty($summary['categories']),
             job::STEP_COURSES => $summary['courses'] > 0,
             job::STEP_PROGRAMS => !empty($options['importprograms']) && $summary['programs'] > 0
                 && program_importer::is_available(),

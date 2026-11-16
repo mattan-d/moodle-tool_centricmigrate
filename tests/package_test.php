@@ -82,6 +82,45 @@ final class package_test extends \advanced_testcase {
         new package($path);
     }
 
+    public function test_summarize_category_csv(): void {
+        $path = $this->make_fixture_category_csv();
+        $package = new package($path);
+        $summary = $package->summarize();
+
+        $this->assertTrue($package->is_csv());
+        $this->assertSame('csv_categories', $summary['exporter']);
+        $this->assertSame(3, $summary['categories']);
+        $this->assertSame(0, $summary['users']);
+
+        $ceh = $package->read_entity('coursecategory', 3);
+        $package->close();
+        $this->assertSame('CEH', $ceh['name']);
+        $this->assertSame('0276', $ceh['idnumber']);
+        $this->assertSame(['TESI', 'הייטק', 'CEH'], $ceh['segments']);
+    }
+
+    public function test_split_category_path_keeps_slash_in_names(): void {
+        $this->assertSame(
+            ['TESI', 'הייטק', 'UX/UI'],
+            package::split_category_path('TESI / הייטק / UX/UI', 'UX/UI')
+        );
+        $this->assertSame(['בניין', 'בטיחות', 'ממונה בטיחות'], package::split_category_path('בניין / בטיחות  / ממונה בטיחות'));
+        $this->assertSame(['Miscellaneous'], package::split_category_path('Miscellaneous', 'Miscellaneous'));
+    }
+
+    /**
+     * @return string
+     */
+    protected function make_fixture_category_csv(): string {
+        $path = make_temp_directory('centricmigrate_tests') . '/categories.csv';
+        $csv = "\"שם הקטגוריה\",\"מספר זיהוי של קטגוריה\",\"Course count\",\"נתיב קטגוריה\"\n";
+        $csv .= "TESI,38,13,TESI\n";
+        $csv .= "CEH,0276,1,\"TESI / הייטק / CEH\"\n";
+        $csv .= "UX/UI,0275,5,\"TESI / הייטק / UX/UI\"\n";
+        file_put_contents($path, $csv);
+        return $path;
+    }
+
     /**
      * @return string
      */

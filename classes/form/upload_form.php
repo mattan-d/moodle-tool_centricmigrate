@@ -16,7 +16,7 @@ class upload_form extends \moodleform {
         $mform = $this->_form;
 
         $mform->addElement('filepicker', 'backupfile', get_string('backupfile', 'tool_centricmigrate'), null, [
-            'accepted_types' => ['.zip'],
+            'accepted_types' => ['.zip', '.csv'],
         ]);
         $mform->addHelpButton('backupfile', 'backupfile', 'tool_centricmigrate');
         $mform->addRule('backupfile', null, 'required');

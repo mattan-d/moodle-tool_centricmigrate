@@ -39,11 +39,11 @@ if ($unrecognized) {
 
 if ($options['help'] || empty($options['file'])) {
     $help = <<<EOT
-Import a Moodle Workplace migration zip.
+Import a Moodle Workplace migration zip or a Moodle user CSV.
 
 Options:
 -h, --help                  Print this help
--f, --file=PATH             Path to the Workplace export zip (required)
+-f, --file=PATH             Path to the Workplace export zip or user CSV (required)
 -u, --userid=ID             User id to run the import as (default: first site admin)
 --importusers=0|1           Import user records (default 1)
 --updateusers=0|1           Update existing users (default 0)
@@ -58,6 +58,7 @@ Options:
 
 Example:
 \$ php admin/tool/centricmigrate/cli/import.php --file=/path/to/programs-export.zip
+\$ php admin/tool/centricmigrate/cli/import.php --file=/path/to/users.csv
 
 EOT;
     echo $help;

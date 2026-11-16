@@ -68,7 +68,7 @@ class processor {
         try {
             switch ($this->job->get_step()) {
                 case job::STEP_USERS:
-                    $this->run_users($options);
+                    $this->run_users($options, $cli);
                     break;
                 case job::STEP_COHORTS:
                     $this->run_cohorts($options);
@@ -110,18 +110,49 @@ class processor {
             $total = $this->package->count_entities('course');
             return $label . ': ' . min($cursor, $total) . ' / ' . $total;
         }
+        if ($step === job::STEP_USERS) {
+            $total = $this->package->count_entities('user');
+            return $label . ': ' . min($cursor, $total) . ' / ' . $total;
+        }
         return $label;
     }
 
     /**
      * @param array $options
+     * @param bool $cli
      */
-    protected function run_users(array $options): void {
-        if (!empty($options['importusers'])) {
-            $importer = new user_importer($this->package, $this->mapping, $this->job, $options);
-            $importer->import_all();
+    protected function run_users(array $options, bool $cli = false): void {
+        if (empty($options['importusers'])) {
+            $this->advance(job::STEP_USERS, $options);
+            return;
         }
-        $this->advance(job::STEP_USERS, $options);
+
+        $ids = array_keys($this->package->get_entity_files('user'));
+        $cursor = $this->job->get_cursor();
+        $limit = $cli ? count($ids) : self::BATCH_FAST;
+        $importer = new user_importer($this->package, $this->mapping, $this->job, $options);
+
+        $processed = 0;
+        while ($cursor < count($ids) && $processed < $limit) {
+            $oldid = (int)$ids[$cursor];
+            $data = $this->package->read_entity('user', $oldid);
+            if ($data) {
+                $importer->import_user($oldid, $data);
+            }
+            $cursor++;
+            $processed++;
+        }
+        $this->job->set_progress(job::STEP_USERS, $cursor);
+
+        if ($cursor >= count($ids)) {
+            foreach ($this->package->iterate_entities('user', 'mappings') as $oldid => $data) {
+                if ($this->mapping->get('user', $oldid)) {
+                    continue;
+                }
+                $importer->map_existing_user($oldid, $data, true);
+            }
+            $this->advance(job::STEP_USERS, $options);
+        }
     }
 
     /**

@@ -13,9 +13,10 @@ $string['privacy:metadata:map'] = 'Mappings from Workplace ids to local ids.';
 $string['privacy:metadata:map:newid'] = 'The local user id when the mapped entity is a user.';
 
 $string['uploadheading'] = 'Import a Moodle Workplace backup';
-$string['uploadintro'] = 'Upload a Workplace migration zip (users, system cohorts, programs, or courses). Programs are imported into the local Programs plugin when it is installed.';
-$string['backupfile'] = 'Workplace backup file';
-$string['backupfile_help'] = 'A zip file exported from Moodle Workplace (contains workplace.xml). Large program exports should be imported from the command line.';
+$string['uploadintro'] = 'Upload a Workplace migration zip (users, system cohorts, programs, or courses), or a Moodle user CSV (id, username, email, firstname, lastname, ...). Programs are imported into the local Programs plugin when it is installed.';
+$string['backupfile'] = 'Workplace zip or user CSV';
+$string['backupfile_help'] = 'A zip exported from Moodle Workplace (workplace.xml), or a user CSV with a username column (and usually id, email, firstname, lastname, idnumber, phone, city, country). Large files should be imported from the command line.';
+$string['csvusers'] = 'User CSV';
 
 $string['previewheading'] = 'Review import';
 $string['sourceinfo'] = 'Source site';
@@ -35,7 +36,7 @@ $string['skippedunsupported'] = 'Not imported (no equivalent on this site)';
 $string['importoptions'] = 'Import options';
 $string['importusers'] = 'Import users';
 $string['updateusers'] = 'Update existing users';
-$string['updateusers_help'] = 'If a user already exists (matched by username or email), update name and email from the backup.';
+$string['updateusers_help'] = 'If a user already exists (matched by username, email, or ID number), update name, email, and profile fields from the file.';
 $string['authfallback'] = 'Authentication method if the original plugin is missing';
 $string['importcohorts'] = 'Import cohorts';
 $string['importcohortmembers'] = 'Import cohort members';
@@ -47,7 +48,8 @@ $string['importprogramusers'] = 'Import program allocations';
 $string['enrolprogramusers'] = 'Enrol allocated users into program courses';
 $string['localprogrammissing'] = 'The local Programs plugin (local_program) is not installed. Program data in this file will be skipped.';
 
-$string['invalidpackage'] = 'This file is not a Moodle Workplace export (workplace.xml is missing or invalid).';
+$string['invalidpackage'] = 'This file is not a Moodle Workplace export (workplace.xml is missing or invalid) or a user CSV with a username column.';
+$string['error:invalidcsv'] = 'This CSV is not a valid Moodle user export. It must include a username column and at least one user row.';
 $string['packagenotfound'] = 'The import package file could not be found. Upload the zip again.';
 $string['jobnotfound'] = 'Import job not found.';
 $string['confirminport'] = 'Start import';
@@ -58,7 +60,7 @@ $string['importerror'] = 'Import failed';
 $string['continueimport'] = 'Continue';
 $string['viewresults'] = 'View results';
 $string['newimport'] = 'Import another file';
-$string['clihelp'] = 'Recommended for large program backups: php admin/tool/centricmigrate/cli/import.php --file=/path/to/export.zip';
+$string['clihelp'] = 'Recommended for large files: php admin/tool/centricmigrate/cli/import.php --file=/path/to/export.zip|users.csv';
 
 $string['statuscreated'] = 'Created';
 $string['statusupdated'] = 'Updated';

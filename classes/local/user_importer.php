@@ -91,10 +91,14 @@ class user_importer {
             }
             $this->mapping->set('user', $oldid, (int)$existing->id);
             $this->import_user_files((int)$existing->id, $data);
+            if (!empty($this->options['updateusers']) && !is_siteadmin($existing) && $existing->id != $CFG->siteguest) {
+                $this->save_profile_fields((int)$existing->id, $data);
+            }
             return;
         }
 
         $auth = $this->resolve_auth((string)xml::value($data['auth'] ?? 'manual'));
+        $password = trim((string)xml::value($data['password'] ?? ''));
         $user = (object)[
             'auth' => $auth,
             'confirmed' => xml::int($data['confirmed'] ?? 1, 1),
@@ -103,11 +107,19 @@ class user_importer {
             'suspended' => xml::int($data['suspended'] ?? 0),
             'mnethostid' => $CFG->mnet_localhost_id,
             'username' => $username,
-            'password' => generate_password(12) . 'Aa1!',
+            'password' => $password !== '' ? $password : generate_password(12) . 'Aa1!',
             'firstname' => (string)xml::value($data['firstname'] ?? ''),
             'lastname' => (string)xml::value($data['lastname'] ?? ''),
             'email' => (string)xml::value($data['email'] ?? ''),
             'emailstop' => xml::int($data['emailstop'] ?? 0),
+            'idnumber' => (string)xml::value($data['idnumber'] ?? ''),
+            'institution' => (string)xml::value($data['institution'] ?? ''),
+            'department' => (string)xml::value($data['department'] ?? ''),
+            'phone1' => (string)xml::value($data['phone1'] ?? ''),
+            'phone2' => (string)xml::value($data['phone2'] ?? ''),
+            'city' => (string)xml::value($data['city'] ?? ''),
+            'country' => $this->resolve_country((string)xml::value($data['country'] ?? '')),
+            'address' => (string)xml::value($data['address'] ?? ''),
             'lang' => $this->resolve_lang((string)xml::value($data['lang'] ?? '')),
             'calendartype' => (string)(xml::value($data['calendartype'] ?? '') ?: 'gregorian'),
             'timezone' => (string)(xml::value($data['timezone'] ?? '99') ?: '99'),
@@ -145,6 +157,7 @@ class user_importer {
 
         $this->mapping->set('user', $oldid, (int)$newid);
         $this->import_user_files((int)$newid, $data);
+        $this->save_profile_fields((int)$newid, $data);
         $this->job->bump_count('user', 'created');
         $this->job->log('info', get_string('log:usercreated', 'tool_centricmigrate', [
             'username' => $username,
@@ -211,6 +224,14 @@ class user_importer {
             }
         }
 
+        $idnumber = trim((string)xml::value($data['idnumber'] ?? ''));
+        if ($idnumber !== '') {
+            $users = $DB->get_records('user', ['idnumber' => $idnumber, 'deleted' => 0], 'id ASC', '*', 0, 2);
+            if (count($users) === 1) {
+                return reset($users);
+            }
+        }
+
         return null;
     }
 
@@ -226,6 +247,20 @@ class user_importer {
             $user->email = $email;
         }
         $user->suspended = xml::int($data['suspended'] ?? $user->suspended);
+        foreach (['idnumber', 'institution', 'department', 'phone1', 'phone2', 'city', 'address'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $value = (string)xml::value($data[$field]);
+                if ($value !== '') {
+                    $user->{$field} = $value;
+                }
+            }
+        }
+        if (array_key_exists('country', $data)) {
+            $country = $this->resolve_country((string)xml::value($data['country']));
+            if ($country !== '') {
+                $user->country = $country;
+            }
+        }
         user_update_user($user, false, false);
     }
 
@@ -275,6 +310,55 @@ class user_importer {
             global $DB;
             $DB->set_field('user', 'picture', 1, ['id' => $userid]);
         }
+    }
+
+    /**
+     * Save custom profile fields named profile_field_* when the field exists on this site.
+     *
+     * @param int $userid
+     * @param array $data
+     */
+    protected function save_profile_fields(int $userid, array $data): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/user/profile/lib.php');
+
+        $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0]);
+        if (!$user) {
+            return;
+        }
+
+        $has = false;
+        foreach ($data as $key => $value) {
+            if (!is_string($key) || strpos($key, 'profile_field_') !== 0) {
+                continue;
+            }
+            $shortname = substr($key, strlen('profile_field_'));
+            if ($shortname === '' || !$DB->record_exists('user_info_field', ['shortname' => $shortname])) {
+                continue;
+            }
+            $text = (string)xml::value($value);
+            if ($text === '') {
+                continue;
+            }
+            $user->{$key} = $text;
+            $has = true;
+        }
+        if ($has) {
+            profile_save_data($user);
+        }
+    }
+
+    /**
+     * @param string $country
+     * @return string
+     */
+    protected function resolve_country(string $country): string {
+        $country = strtoupper(trim($country));
+        if ($country === '' || strlen($country) !== 2) {
+            return '';
+        }
+        $choices = get_string_manager()->get_list_of_countries(true);
+        return isset($choices[$country]) ? $country : '';
     }
 
     /**

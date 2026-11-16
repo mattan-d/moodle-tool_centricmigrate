@@ -10,11 +10,27 @@ defined('MOODLE_INTERNAL') || die();
  */
 class package implements \IteratorAggregate {
 
+    public const FORMAT_ZIP = 'zip';
+    public const FORMAT_CSV = 'csv';
+
+    /** Moodle user-table columns accepted from a user CSV. */
+    public const CSV_USER_FIELDS = [
+        'username', 'password', 'email', 'firstname', 'lastname', 'idnumber',
+        'institution', 'department', 'phone1', 'phone2', 'city', 'country',
+        'address', 'lang', 'timezone', 'auth', 'suspended', 'confirmed',
+        'middlename', 'alternatename', 'firstnamephonetic', 'lastnamephonetic',
+        'description', 'maildisplay', 'mailformat', 'maildigest', 'autosubscribe',
+        'trackforums', 'emailstop', 'calendartype',
+    ];
+
     /** @var string */
     protected $filepath;
 
-    /** @var \ZipArchive */
-    protected $zip;
+    /** @var \ZipArchive|null */
+    protected $zip = null;
+
+    /** @var string */
+    protected $format = self::FORMAT_ZIP;
 
     /** @var array|null */
     protected $manifest = null;
@@ -22,16 +38,28 @@ class package implements \IteratorAggregate {
     /** @var array */
     protected $index = [];
 
+    /** @var array entity => oldid => record */
+    protected $csvrecords = [];
+
     /**
-     * @param string $filepath Absolute path to the zip.
+     * @param string $filepath Absolute path to a Workplace zip or user CSV.
      */
     public function __construct(string $filepath) {
         $this->filepath = $filepath;
-        $this->zip = new \ZipArchive();
-        if ($this->zip->open($filepath) !== true) {
+        if (!is_readable($filepath)) {
             throw new \moodle_exception('error:unzip', 'tool_centricmigrate');
         }
-        $this->build_index();
+        if (self::file_is_zip($filepath)) {
+            $this->format = self::FORMAT_ZIP;
+            $this->zip = new \ZipArchive();
+            if ($this->zip->open($filepath) !== true) {
+                throw new \moodle_exception('error:unzip', 'tool_centricmigrate');
+            }
+            $this->build_index();
+            return;
+        }
+        $this->format = self::FORMAT_CSV;
+        $this->load_csv();
     }
 
     public function __destruct() {
@@ -44,7 +72,22 @@ class package implements \IteratorAggregate {
     public function close(): void {
         if ($this->zip instanceof \ZipArchive) {
             @$this->zip->close();
+            $this->zip = null;
         }
+    }
+
+    /**
+     * @return string zip|csv
+     */
+    public function get_format(): string {
+        return $this->format;
+    }
+
+    /**
+     * @return bool
+     */
+    public function is_csv(): bool {
+        return $this->format === self::FORMAT_CSV;
     }
 
     /**
@@ -59,6 +102,16 @@ class package implements \IteratorAggregate {
      */
     public function get_manifest(): array {
         if ($this->manifest !== null) {
+            return $this->manifest;
+        }
+        if ($this->format === self::FORMAT_CSV) {
+            $this->manifest = [
+                'exporter' => 'csv_users',
+                'wwwroot' => '',
+                'siteidentifier' => 'csv:' . substr(sha1_file($this->filepath), 0, 32),
+                'release' => '',
+                'createdbyname' => '',
+            ];
             return $this->manifest;
         }
         $raw = $this->read('workplace.xml');
@@ -124,6 +177,10 @@ class package implements \IteratorAggregate {
      * @return array|null
      */
     public function read_entity(string $entity, int $oldid, string $section = 'data'): ?array {
+        if ($this->format === self::FORMAT_CSV) {
+            $record = $this->csvrecords[$section][$entity][$oldid] ?? null;
+            return $record;
+        }
         $files = $this->get_entity_files($entity, $section);
         if (empty($files[$oldid])) {
             return null;
@@ -160,6 +217,9 @@ class package implements \IteratorAggregate {
      * @return string|null
      */
     public function read(string $path): ?string {
+        if (!$this->zip instanceof \ZipArchive) {
+            return null;
+        }
         $contents = $this->zip->getFromName($path);
         if ($contents === false) {
             return null;
@@ -184,7 +244,7 @@ class package implements \IteratorAggregate {
      * @return bool
      */
     public function has_content(string $contenthash): bool {
-        if ($contenthash === '') {
+        if ($contenthash === '' || !$this->zip instanceof \ZipArchive) {
             return false;
         }
         return $this->zip->locateName($this->content_zip_path($contenthash)) !== false;
@@ -251,7 +311,123 @@ class package implements \IteratorAggregate {
             'dynamicrules' => $this->count_entities('tool_dynamicrule'),
             'usermappings' => $this->count_entities('user', 'mappings'),
             'cohortmappings' => $this->count_entities('cohort', 'mappings'),
+            'format' => $this->format,
         ];
+    }
+
+    /**
+     * Whether the file starts with a ZIP local-file header.
+     *
+     * @param string $filepath
+     * @return bool
+     */
+    public static function file_is_zip(string $filepath): bool {
+        $handle = fopen($filepath, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+        $magic = fread($handle, 4);
+        fclose($handle);
+        return is_string($magic) && str_starts_with($magic, 'PK');
+    }
+
+    /**
+     * Load a Moodle user-export CSV (id, username, email, firstname, ...).
+     */
+    protected function load_csv(): void {
+        $handle = fopen($this->filepath, 'rb');
+        if ($handle === false) {
+            throw new \moodle_exception('error:invalidcsv', 'tool_centricmigrate');
+        }
+
+        $first = fgets($handle);
+        if ($first === false) {
+            fclose($handle);
+            throw new \moodle_exception('error:invalidcsv', 'tool_centricmigrate');
+        }
+        if (str_starts_with($first, "\xEF\xBB\xBF")) {
+            $first = substr($first, 3);
+        }
+        $delimiter = self::detect_csv_delimiter($first);
+        $header = str_getcsv($first, $delimiter);
+        $header = array_map(static function ($name) {
+            return strtolower(trim((string)$name));
+        }, $header);
+
+        $usernamecol = array_search('username', $header, true);
+        if ($usernamecol === false) {
+            fclose($handle);
+            throw new \moodle_exception('error:invalidcsv', 'tool_centricmigrate');
+        }
+
+        $this->index = ['data' => ['user' => []], 'mappings' => []];
+        $this->csvrecords = ['data' => ['user' => []], 'mappings' => []];
+        $linenumber = 1;
+        while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+            $linenumber++;
+            if ($row === [null] || $row === false) {
+                continue;
+            }
+            if ($this->csv_row_empty($row)) {
+                continue;
+            }
+            $assoc = [];
+            foreach ($header as $i => $name) {
+                if ($name === '') {
+                    continue;
+                }
+                $assoc[$name] = isset($row[$i]) ? trim((string)$row[$i]) : '';
+            }
+            $username = \core_text::strtolower(trim($assoc['username'] ?? ''));
+            if ($username === '') {
+                continue;
+            }
+            $assoc['username'] = $username;
+            $oldid = (int)($assoc['id'] ?? 0);
+            if ($oldid < 1) {
+                $oldid = 1000000 + $linenumber;
+            }
+            if (isset($this->csvrecords['data']['user'][$oldid])) {
+                continue;
+            }
+            $assoc['_oldid'] = $oldid;
+            $this->csvrecords['data']['user'][$oldid] = $assoc;
+            $this->index['data']['user'][$oldid] = 'csv:user:' . $oldid;
+        }
+        fclose($handle);
+
+        if (empty($this->index['data']['user'])) {
+            throw new \moodle_exception('error:invalidcsv', 'tool_centricmigrate');
+        }
+        ksort($this->index['data']['user'], SORT_NUMERIC);
+    }
+
+    /**
+     * @param string $headerline
+     * @return string
+     */
+    protected static function detect_csv_delimiter(string $headerline): string {
+        $counts = [
+            ',' => substr_count($headerline, ','),
+            ';' => substr_count($headerline, ';'),
+            "\t" => substr_count($headerline, "\t"),
+        ];
+        arsort($counts);
+        $delimiter = array_key_first($counts);
+        return $counts[$delimiter] > 0 ? $delimiter : ',';
+    }
+
+    /**
+     * @param array $row
+     * @return bool
+     */
+    protected function csv_row_empty(array $row): bool {
+        foreach ($row as $value) {
+            if (trim((string)$value) !== '') {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

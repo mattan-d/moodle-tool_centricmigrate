@@ -53,6 +53,47 @@ final class package_test extends \advanced_testcase {
         $this->assertSame($content, file_get_contents($target));
     }
 
+    public function test_summarize_user_csv(): void {
+        $path = $this->make_fixture_csv();
+        $package = new package($path);
+        $summary = $package->summarize();
+
+        $this->assertTrue($package->is_csv());
+        $this->assertSame(package::FORMAT_CSV, $summary['format']);
+        $this->assertSame('csv_users', $summary['exporter']);
+        $this->assertSame(2, $summary['users']);
+        $this->assertSame(0, $summary['courses']);
+        $this->assertStringStartsWith('csv:', $summary['siteidentifier']);
+
+        $user = $package->read_entity('user', 15004);
+        $package->close();
+        $this->assertSame('3218797778', $user['username']);
+        $this->assertSame('h654@gmail.com', $user['email']);
+        $this->assertSame('Bar Asher', $user['lastname']);
+        $this->assertSame('IL', $user['country']);
+        $this->assertSame('054-1234567', $user['phone1']);
+        $this->assertSame(15004, $user['_oldid']);
+    }
+
+    public function test_csv_requires_username_column(): void {
+        $path = make_temp_directory('centricmigrate_tests') . '/bad.csv';
+        file_put_contents($path, "id,email\n1,a@b.c\n");
+        $this->expectException(\moodle_exception::class);
+        new package($path);
+    }
+
+    /**
+     * @return string
+     */
+    protected function make_fixture_csv(): string {
+        $path = make_temp_directory('centricmigrate_tests') . '/users.csv';
+        $csv = "id,username,email,firstname,lastname,idnumber,institution,department,phone1,phone2,city,country,profile_field_skype,profile_field_yahoo,profile_field_url\n";
+        $csv .= "15004,3218797778,h654@gmail.com,Maor,\"Bar Asher\",3218797778,,,054-1234567,,,IL,,,\n";
+        $csv .= "16132,345433825,achevlen@gmail.com,Abraham,Chevlen,345433825,,,053-8488282,,,IL,,,\n";
+        file_put_contents($path, $csv);
+        return $path;
+    }
+
     /**
      * @return string
      */

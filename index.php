@@ -94,6 +94,9 @@ if ($uploaddata = $uploadform->get_data()) {
     }
 
     $filename = $uploadform->get_new_filename('backupfile') ?: 'workplace-export.zip';
+    if (($summary['format'] ?? '') === package::FORMAT_CSV && !preg_match('/\.csv$/i', $filename)) {
+        $filename .= '.csv';
+    }
     $job = job::create([
         'filename' => $filename,
         'siteidentifier' => $summary['siteidentifier'] ?: 'unknown',
@@ -169,22 +172,32 @@ function require_user_key_match(job $job): void {
  * @return string
  */
 function render_package_preview(array $summary): string {
+    $iscsv = ($summary['format'] ?? '') === package::FORMAT_CSV;
     $table = new html_table();
     $table->attributes['class'] = 'generaltable tool-centricmigrate-preview';
-    $table->data = [
-        [get_string('sourceinfo', 'tool_centricmigrate'), s($summary['wwwroot'])],
-        [get_string('exporter', 'tool_centricmigrate'), s($summary['exporter'])],
-        [get_string('releasedata', 'tool_centricmigrate'), s($summary['release'])],
-        [get_string('createdby', 'tool_centricmigrate'), s($summary['createdbyname'])],
-        [get_string('countusers', 'tool_centricmigrate'), $summary['users']],
-        [get_string('countcohorts', 'tool_centricmigrate'), $summary['cohorts']],
-        [get_string('countcohortmembers', 'tool_centricmigrate'), $summary['cohortmembers']],
-        [get_string('countcourses', 'tool_centricmigrate'), $summary['courses']],
-        [get_string('countprograms', 'tool_centricmigrate'), $summary['programs']],
-        [get_string('countprogramusers', 'tool_centricmigrate'), $summary['programusers']],
-        [get_string('countdynamicrules', 'tool_centricmigrate'), $summary['dynamicrules']
+    $table->data = [];
+    if (!$iscsv) {
+        $table->data[] = [get_string('sourceinfo', 'tool_centricmigrate'), s($summary['wwwroot'])];
+    }
+    $table->data[] = [
+        get_string('exporter', 'tool_centricmigrate'),
+        $iscsv ? get_string('csvusers', 'tool_centricmigrate') : s($summary['exporter']),
+    ];
+    if (!$iscsv) {
+        $table->data[] = [get_string('releasedata', 'tool_centricmigrate'), s($summary['release'])];
+        $table->data[] = [get_string('createdby', 'tool_centricmigrate'), s($summary['createdbyname'])];
+    }
+    $table->data[] = [get_string('countusers', 'tool_centricmigrate'), $summary['users']];
+    $table->data[] = [get_string('countcohorts', 'tool_centricmigrate'), $summary['cohorts']];
+    $table->data[] = [get_string('countcohortmembers', 'tool_centricmigrate'), $summary['cohortmembers']];
+    $table->data[] = [get_string('countcourses', 'tool_centricmigrate'), $summary['courses']];
+    $table->data[] = [get_string('countprograms', 'tool_centricmigrate'), $summary['programs']];
+    $table->data[] = [get_string('countprogramusers', 'tool_centricmigrate'), $summary['programusers']];
+    $table->data[] = [
+        get_string('countdynamicrules', 'tool_centricmigrate'),
+        $summary['dynamicrules']
             ? $summary['dynamicrules'] . ' (' . get_string('skippedunsupported', 'tool_centricmigrate') . ')'
-            : 0],
+            : 0,
     ];
     $html = html_writer::tag('h3', get_string('contents', 'tool_centricmigrate'));
     $html .= html_writer::table($table);
